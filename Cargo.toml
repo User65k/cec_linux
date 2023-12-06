@@ -1,0 +1,36 @@
+[package]
+name = "cec_linux"
+version = "0.1.0"
+authors = ["User65k <15049544+User65k@users.noreply.github.com>"]
+edition = "2021"
+license = "MIT"
+description = "General purpose Webserver with TLS, File, FCGI, DAV and Websocket support"
+
+repository = "https://github.com/User65k/cec_linux"
+readme = "README.md"
+keywords = ["cec", "hdmi"]
+
+[dependencies]
+nix = {version="0.27", features=["ioctl"]}
+bitflags = "2.4.1"
+num_enum = "0.7"
+
+tokio = {version = "1.34", optional=true}
+
+[features]
+tokio = ["tokio/net"]
+poll = ["nix/poll"]
+
+[[example]]
+name = "switch_power"
+path = "examples/switch_power.rs"
+
+[[example]]
+name = "monitor"
+path = "examples/monitor.rs"
+required-features = ["poll"]
+
+[package.metadata.docs.rs]
+all-features = true
+# enable unstable features in the documentation
+rustdoc-args = ["--cfg", "docsrs"]

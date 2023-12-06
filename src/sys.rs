@@ -1205,12 +1205,14 @@ type c_char = u8; //its actually i8, but that sucks
 /**
  * Create it from a String (String has to be ascii)
  * ```
- * let name: OSDStr<15> = "pi4".to_string().try_into().unwrap();
+ * # use cec_linux::OSDStr;
+ * let name: OSDStr::<15> = "pi4".to_string().try_into().unwrap();
  * ```
  *
  * and use it as `&str`
  * ```
- * let str: &str = OSDStr<14>::default().as_ref();
+ * # use cec_linux::OSDStr;
+ * let str: &str = OSDStr::<14>::default().as_ref();
  * ```
  */
 #[repr(transparent)]

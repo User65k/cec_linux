@@ -5,7 +5,8 @@
  * Create a [CecDevice] and optionally [change its mode](CecDevice::set_mode)
  * to send and receive messages to and from other devices.
  *
- * ```
+ * ```no_run
+ * # use cec_linux::{CecDevice, CecModeInitiator, CecModeFollower, CecLogicalAddress, CecOpcode};
  * # fn main() -> std::io::Result<()> {
  * let cec = CecDevice::open("/dev/cec0")?;
  * cec.set_mode(CecModeInitiator::Send, CecModeFollower::All)?;
@@ -15,7 +16,7 @@
  *      CecOpcode::Standby,
  *  )?;
  * let msg = cec.rec()?;
- * # Ok()
+ * # Ok(())
  * # }
  * ```
  */
@@ -48,10 +49,11 @@ pub struct CecDevice(std::fs::File);
 impl CecDevice {
     /**
      * Open a CEC device. Typically `/dev/cecX`
-     * ```
+     * ```no_run
+     * # use cec_linux::CecDevice;
      * # fn main() -> std::io::Result<()> {
      * let cec = CecDevice::open("/dev/cec0")?;
-     * # Ok()
+     * # Ok(())
      * # }
      * ```
      */

@@ -29,7 +29,7 @@ use nix::poll::{poll, PollFd};
 use std::{io::Result, os::fd::AsRawFd};
 use sys::{
     capabilities, get_event, get_log, get_mode, get_phys, receive, set_log, set_mode, set_phys,
-    transmit, CecEvent as CecEventSys, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK,
+    transmit, CecEvent as CecEventSys, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK, TxStatus, RxStatus, CecTxError,
 };
 pub use sys::{
     Capabilities, CecAbortReason, CecCaps, CecEventLostMsgs, CecEventStateChange, CecLogAddrFlags,
@@ -205,6 +205,8 @@ impl CecDevice {
         self.transmit(from, to, CecOpcode::UserControlReleased)
     }
     /// send a cec command without parameters to a remote device
+    /// 
+    /// transmitting from an address not in [CecLogAddrMask] will return InvalidInput
     pub fn transmit(
         &self,
         from: CecLogicalAddress,
@@ -215,7 +217,7 @@ impl CecDevice {
         msg.msg[1] = opcode.into();
         msg.len = 2;
         unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
-        Ok(())
+        msg_to_io_result(msg)
     }
     /// send a cec command with parameters to a remote device.
     /// The format of `data` depends on the `opcode`.
@@ -231,7 +233,51 @@ impl CecDevice {
         msg.len = 2 + data.len() as u32;
         msg.msg[2..msg.len as usize].copy_from_slice(data);
         unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
-        Ok(())
+        msg_to_io_result(msg)
+    }
+    /**
+     * send a cec command with parameters and wait for a reply with opcode `wait_for`. Then return its payload.
+     * returns timeout if no reply is received
+     * ```no_run
+     * # use cec_linux::CecDevice;
+     * # fn main() -> std::io::Result<()> {
+     * # let cec = CecDevice::open("/dev/cec0")?;
+     * if let Ok(audio) = cec.request_data(CecLogicalAddress::Playback2, CecLogicalAddress::Audiosystem, CecOpcode::GiveAudioStatus, b"", CecOpcode::ReportAudioStatus){
+     *    let v = audio[0];
+     *    println!("Muted: {}", v & 0x80);
+     *    println!("Vol: {}%", v & 0x7f);
+     * }
+     * # Ok(())
+     * # }
+     * ```
+     */
+    pub fn request_data(
+        &self,
+        from: CecLogicalAddress,
+        to: CecLogicalAddress,
+        opcode: CecOpcode,
+        data: &[u8],
+        wait_for: CecOpcode,
+    ) -> Result<Vec<u8>> {
+        let mut msg = CecMsg::init(from, to);
+        msg.msg[1] = opcode.into();
+        msg.len = 2 + data.len() as u32;
+        msg.msg[2..msg.len as usize].copy_from_slice(data);
+        msg.reply = wait_for;
+        msg.timeout = 1000;
+        unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
+        if msg.reply != CecOpcode::FeatureAbort || (msg.reply==CecOpcode::FeatureAbort && msg.rx_status.contains(RxStatus::FEATURE_ABORT)) {
+            let l = msg.len as usize;
+            let data = if l > 2 {
+                let mut data = Vec::with_capacity(l-2);
+                data.extend_from_slice(&msg.msg[2..l]);
+                data
+            }else{
+                Vec::with_capacity(0)
+            };
+            return Ok(data);
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::TimedOut, CecTxError::from(msg)))
     }
     /// receive a single message. the available messages depend on [CecModeFollower]
     pub fn rec(&self) -> Result<CecMsg> {
@@ -257,4 +303,13 @@ pub enum CecEvent {
     /// This event is sent when messages are lost because the application
     /// didn't empty the message queue in time
     LostMsgs(CecEventLostMsgs),
+}
+
+/// Turn a message into io::Result
+fn msg_to_io_result(msg: CecMsg) -> Result<()> {
+    if msg.tx_status.contains(TxStatus::OK){
+        Ok(())
+    }else{
+        Err(std::io::Error::new(std::io::ErrorKind::Other, CecTxError::from(msg)))
+    }
 }

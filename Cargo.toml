@@ -1,10 +1,10 @@
 [package]
 name = "cec_linux"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["User65k <15049544+User65k@users.noreply.github.com>"]
 edition = "2021"
 license = "MIT"
-description = "General purpose Webserver with TLS, File, FCGI, DAV and Websocket support"
+description = "A pure rust library to use the HDMI-CEC linux API"
 
 repository = "https://github.com/User65k/cec_linux"
 readme = "README.md"

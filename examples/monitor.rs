@@ -1,3 +1,9 @@
+/*!
+ * Monitor a CEC device.
+ * Think tcpdump.
+ * Needs CAP_NET_ADMIN.
+ */
+
 use cec_linux::*;
 
 fn main() -> std::io::Result<()> {

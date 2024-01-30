@@ -353,11 +353,11 @@ pub struct CecMsg {
     /// broadcast, then -EINVAL is returned.
     /// if reply is non-zero, then timeout is set to 1000 (the required
     /// maximum response time).
-    reply: u8,
+    pub reply: CecOpcode,
     /// The message receive status bits. Set by the driver.
-    rx_status: RxStatus,
+    pub rx_status: RxStatus,
     /// The message transmit status bits. Set by the driver.
-    tx_status: TxStatus,
+    pub tx_status: TxStatus,
     /// The number of 'Arbitration Lost' events. Set by the driver.
     tx_arb_lost_cnt: u8,
     /// The number of 'Not Acknowledged' events. Set by the driver.
@@ -420,7 +420,7 @@ impl CecMsg {
             sequence: 0,
             flags: 0,
             msg: [0; 16],
-            reply: 0,
+            reply: CecOpcode::FeatureAbort,
             rx_status: RxStatus::empty(),
             tx_status: TxStatus::empty(),
             tx_arb_lost_cnt: 0,
@@ -457,10 +457,15 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct TxStatus: u8 {
         const OK          = (1 << 0);
+        /// CEC line arbitration was lost.
         const ARB_LOST    = (1 << 1);
+        /// Message was not acknowledged.
         const NACK        = (1 << 2);
+        /// Low drive was detected on the CEC bus. This indicates that a follower detected an error on the bus and requests a retransmission.
         const LOW_DRIVE   = (1 << 3);
         const ERROR       = (1 << 4);
+        /// The transmit failed after one or more retries. This status bit is mutually exclusive with [TxStatus::OK].
+        /// Other bits can still be set to explain which failures were seen.
         const MAX_RETRIES = (1 << 5);
     }
 }
@@ -468,8 +473,48 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct RxStatus: u8 {
         const OK            = (1 << 0);
+        /// The reply to an earlier transmitted message timed out.
         const TIMEOUT       = (1 << 1);
+        /// This status is only set if this message was the reply to an earlier transmitted message
+        /// that received [CecOpcode::FeatureAbort]
         const FEATURE_ABORT = (1 << 2);
+    }
+}
+#[derive(Debug)]
+pub struct CecTxError {
+    status: TxStatus,
+    tx_arb_lost_cnt: u8,
+    tx_nack_cnt: u8,
+    tx_low_drive_cnt: u8,
+    tx_error_cnt: u8,
+}
+impl From<CecMsg> for CecTxError {
+    fn from(msg: CecMsg) -> Self {
+        Self {
+            status: msg.tx_status,
+            tx_arb_lost_cnt: msg.tx_arb_lost_cnt,
+            tx_nack_cnt: msg.tx_nack_cnt,
+            tx_low_drive_cnt: msg.tx_low_drive_cnt,
+            tx_error_cnt: msg.tx_error_cnt,            
+        }
+    }
+}
+impl std::error::Error for CecTxError {}
+impl std::fmt::Display for CecTxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.status.contains(TxStatus::ARB_LOST) {
+            f.write_fmt(format_args!("ArbLost: {} ", self.tx_arb_lost_cnt))?;
+        }
+        if self.status.contains(TxStatus::NACK) {
+            f.write_fmt(format_args!("NAck: {} ", self.tx_nack_cnt))?;
+        }
+        if self.status.contains(TxStatus::LOW_DRIVE) {
+            f.write_fmt(format_args!("LowDrive: {} ", self.tx_low_drive_cnt))?;
+        }
+        if self.status.contains(TxStatus::ERROR) {
+            f.write_fmt(format_args!("Errors: {} ", self.tx_error_cnt))?;
+        }
+        Ok(())
     }
 }
 /*
@@ -623,7 +668,6 @@ ioctl_readwrite! {
      */
     get_event, b'a',  7, CecEvent
 }
-
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Clone, Copy)]
 #[repr(u8)]
 pub enum CecOpcode {
@@ -788,6 +832,8 @@ pub enum CecOpcode {
      * - [CecAbortReason]
      */
     FeatureAbort = 0x00,
+    /// A device shall always respond with a [CecOpcode::FeatureAbort] message containing any valid value for [CecAbortReason].
+    /// CEC switches shall not respond to this message.  
     /// When in [CecModeFollower::ExclusivePassthru] this message has to be handled by userspace, otherwise the core will return a feature refused message as per the specification.
     Abort = 0xff,
 

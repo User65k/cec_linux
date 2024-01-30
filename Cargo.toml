@@ -30,6 +30,10 @@ name = "monitor"
 path = "examples/monitor.rs"
 required-features = ["poll"]
 
+[[example]]
+name = "pass"
+path = "examples/pass.rs"
+
 [package.metadata.docs.rs]
 all-features = true
 # enable unstable features in the documentation

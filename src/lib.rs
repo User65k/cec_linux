@@ -239,7 +239,7 @@ impl CecDevice {
      * send a cec command with parameters and wait for a reply with opcode `wait_for`. Then return its payload.
      * returns timeout if no reply is received
      * ```no_run
-     * # use cec_linux::CecDevice;
+     * # use cec_linux::{CecDevice, CecLogicalAddress, CecOpcode};
      * # fn main() -> std::io::Result<()> {
      * # let cec = CecDevice::open("/dev/cec0")?;
      * if let Ok(audio) = cec.request_data(CecLogicalAddress::Playback2, CecLogicalAddress::Audiosystem, CecOpcode::GiveAudioStatus, b"", CecOpcode::ReportAudioStatus){

@@ -16,15 +16,7 @@ fn main() -> std::io::Result<()> {
     cec.set_log(log)?;
 
     // set new address (PLAYBACK)
-    let log = CecLogAddrs {
-        cec_version: Version::V1_4,
-        num_log_addrs: 1,
-        vendor_id: CEC_VENDOR_ID_NONE,
-        osd_name: "pi4".to_string().try_into().unwrap(),
-        primary_device_type: [CecPrimDevType::PLAYBACK; 4],
-        log_addr_type: [CecLogAddrType::PLAYBACK; 4],
-        ..Default::default()
-    };
+    let log = CecLogAddrs::new(CEC_VENDOR_ID_NONE, Version::V1_4, "pi4".to_string().try_into().unwrap(), &[CecPrimDevType::PLAYBACK], &[CecLogAddrType::PLAYBACK]);
     cec.set_log(log)?;
 
     // ask Audiosystem to turn on (from standby)

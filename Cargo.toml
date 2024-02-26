@@ -1,9 +1,9 @@
 [package]
 name = "cec_linux"
-version = "0.1.1"
 authors = ["User65k <15049544+User65k@users.noreply.github.com>"]
 edition = "2021"
 license = "MIT"
+version = "0.2.0"
 description = "A pure rust library to use the HDMI-CEC linux API"
 
 repository = "https://github.com/User65k/cec_linux"
@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["cec", "hdmi"]
 
 [dependencies]
-nix = {version="0.27", features=["ioctl"]}
+nix = {version="0.28", features=["ioctl"]}
 bitflags = "2.4.1"
 num_enum = "0.7"
 

@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
     loop {
         let f = cec.poll(
             PollFlags::POLLIN | PollFlags::POLLRDNORM | PollFlags::POLLPRI,
-            -1,
+            PollTimeout::NONE,
         )?;
 
         if f.intersects(PollFlags::POLLPRI) {
@@ -36,7 +36,7 @@ fn main() -> std::io::Result<()> {
                             msg.parameters()
                         );
                     }
-                    _ => println!("msg {:x?}", &msg.msg[..msg.len as usize]),
+                    _ => println!("msg {:x?}", msg),
                 }
             } else {
                 println!("msg {:x?}", msg);

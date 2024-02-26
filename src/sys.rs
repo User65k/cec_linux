@@ -1,5 +1,6 @@
 //https://www.avsforum.com/attachments/hdmi-cec-v1-3a-specifications-pdf.2579760/
 
+use std::{mem::MaybeUninit, ptr::addr_of_mut, slice::from_raw_parts_mut};
 use bitflags::bitflags;
 use nix::{ioctl_read, ioctl_readwrite, ioctl_write_ptr};
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
@@ -94,9 +95,9 @@ ioctl_read! {
 #[repr(C)]
 pub struct CecLogAddrs {
     /// the claimed logical addresses. Set by the driver.
-    pub log_addr: [u8; CEC_MAX_LOG_ADDRS],
+    log_addr: [u8; CEC_MAX_LOG_ADDRS],
     /// current logical address mask. Set by the driver.
-    pub log_addr_mask: CecLogAddrMask,
+    log_addr_mask: CecLogAddrMask,
 
     /// the CEC version that the adapter should implement. Set by the caller.
     /// Used to implement the [CecOpcode::CecVersion] and [CecOpcode::ReportFeatures] messages.
@@ -111,7 +112,7 @@ pub struct CecLogAddrs {
     /// The driver will return the actual number of logical addresses it could claim, which may be less than what was requested.
     ///
     /// If this field is set to 0, then the CEC adapter shall clear all claimed logical addresses and all other fields will be ignored.
-    pub num_log_addrs: u8,
+    num_log_addrs: u8,
     /// the vendor ID of the device. Set by the caller.
     pub vendor_id: u32,
     pub flags: CecLogAddrFlags,
@@ -119,14 +120,58 @@ pub struct CecLogAddrs {
     /// Used for [CecOpcode::SetOsdName]
     pub osd_name: OSDStr<15>,
     /// the primary device type for each logical address. Set by the caller.
-    pub primary_device_type: [CecPrimDevType; CEC_MAX_LOG_ADDRS],
+    primary_device_type: [CecPrimDevType; CEC_MAX_LOG_ADDRS],
     /// the logical address types. Set by the caller.
-    pub log_addr_type: [CecLogAddrType; CEC_MAX_LOG_ADDRS],
+    log_addr_type: [CecLogAddrType; CEC_MAX_LOG_ADDRS],
 
     /// CEC 2.0: all device types represented by the logical address. Set by the caller. Used in [CecOpcode::ReportFeatures].
     pub all_device_types: [u8; CEC_MAX_LOG_ADDRS],
     /// CEC 2.0: The logical address features. Set by the caller. Used in [CecOpcode::ReportFeatures].
     pub features: [[u8; CEC_MAX_LOG_ADDRS]; 12],
+}
+impl CecLogAddrs {
+    pub fn addresses(&self) -> &[CecLogicalAddress] {
+        //If no logical address could be claimed, then it is set to CEC_LOG_ADDR_INVALID.
+        if self.log_addr[0] == 0xff {
+            return &[];
+        }
+        //If this adapter is Unregistered, then log_addr[0] is set to 0xf and all others to CEC_LOG_ADDR_INVALID.
+        let s = if self.log_addr[0] == 0xf {
+            1
+        }else{
+            self.num_log_addrs as usize
+        };
+        // u8 to repr(u8)
+        unsafe { core::mem::transmute(&self.log_addr[..s]) }
+    }
+    pub fn mask(&self) -> CecLogAddrMask {
+        self.log_addr_mask
+    }
+    pub fn new(
+        vendor_id: u32,
+        cec_version: Version,
+        osd_name: OSDStr<15>,
+        primary_type: &[CecPrimDevType],
+        addr_type: &[CecLogAddrType]
+    ) -> CecLogAddrs {
+        assert!(primary_type.len() <= 4);
+        assert_eq!(primary_type.len(), addr_type.len());
+
+        let num_log_addrs = primary_type.len() as u8;
+
+        let mut log = MaybeUninit::uninit();
+        let ptr: *mut CecLogAddrs = log.as_mut_ptr();
+        unsafe {
+            addr_of_mut!((*ptr).num_log_addrs).write(num_log_addrs);
+            addr_of_mut!((*ptr).cec_version).write(cec_version);
+            addr_of_mut!((*ptr).vendor_id).write(vendor_id);
+            addr_of_mut!((*ptr).osd_name).write(osd_name);
+            from_raw_parts_mut(addr_of_mut!((*ptr).log_addr_type).cast::<CecLogAddrType>(), addr_type.len()).copy_from_slice(addr_type);
+            from_raw_parts_mut(addr_of_mut!((*ptr).primary_device_type).cast::<CecPrimDevType>(), primary_type.len()).copy_from_slice(primary_type);
+
+            log.assume_init()
+        }
+    }
 }
 impl Default for CecLogAddrs {
     fn default() -> Self {
@@ -135,7 +180,7 @@ impl Default for CecLogAddrs {
             log_addr_mask: Default::default(),
             cec_version: Version::V1_4,
             num_log_addrs: 0,
-            vendor_id: Default::default(),
+            vendor_id: CEC_VENDOR_ID_NONE,
             flags: CecLogAddrFlags::empty(),
             osd_name: Default::default(),
             primary_device_type: [CecPrimDevType::PLAYBACK; 4],
@@ -321,7 +366,7 @@ pub struct CecMsg {
     /// Timestamp in nanoseconds using CLOCK_MONOTONIC. Set by the driver when the message was received.
     rx_ts: u64,
     /// Length in bytes of the message.
-    pub len: u32,
+    pub(crate) len: u32,
     /// The timeout (in ms) that is used to timeout CEC_RECEIVE.
     /// Set to 0 if you want to wait forever. This timeout can also be
     /// used with CEC_TRANSMIT as the timeout for waiting for a reply.
@@ -334,7 +379,7 @@ pub struct CecMsg {
     flags: u32,
     /// The message payload.  
     /// Includes initiator, destination and opcode.
-    pub msg: [u8; CEC_MAX_MSG_SIZE],
+    pub(crate) msg: [u8; CEC_MAX_MSG_SIZE],
     /// This field is ignored with CEC_RECEIVE and is only used by CEC_TRANSMIT.
     /// If non-zero, then wait for a reply with this opcode.
     /// Set to CEC_MSG_FEATURE_ABORT if you want to wait for a possible ABORT reply.
@@ -602,6 +647,8 @@ impl CecLogAddrMask {
 
 // ---  Events  ---
 #[repr(u32)]
+#[allow(dead_code)] // this enum is used in ffi
+#[non_exhaustive]
 pub enum CecEventType {
     /// Event that occurs when the adapter state changes
     StateChange = 1,

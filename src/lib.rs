@@ -23,13 +23,13 @@
 mod sys;
 #[cfg(feature = "poll")]
 #[cfg_attr(docsrs, doc(cfg(feature = "poll")))]
-pub use nix::poll::PollFlags;
+pub use nix::poll::{PollFlags, PollTimeout};
 #[cfg(feature = "poll")]
 use nix::poll::{poll, PollFd};
-use std::{io::Result, os::fd::AsRawFd};
+use std::{io::Result, mem::MaybeUninit, os::fd::{AsFd, AsRawFd}};
 use sys::{
     capabilities, get_event, get_log, get_mode, get_phys, receive, set_log, set_mode, set_phys,
-    transmit, CecEvent as CecEventSys, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK, TxStatus, RxStatus, CecTxError,
+    transmit, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK, TxStatus, RxStatus, CecTxError,
 };
 pub use sys::{
     Capabilities, CecAbortReason, CecCaps, CecEventLostMsgs, CecEventStateChange, CecLogAddrFlags,
@@ -69,24 +69,23 @@ impl CecDevice {
     /// 2. room in the transmit queue (`POLLOUT` and `POLLWRNORM` flags)
     /// 3. events in the event queue (`POLLPRI` flag)
     ///
-    /// timeout is in milliseconds.  
-    /// Specifying a negative value in timeout means an infinite timeout.
-    /// Specifying a timeout of zero causes poll() to return immediately, even if no file descriptors are ready.
+    /// Specifying a [`PollTimeout::NONE`] in timeout means an infinite timeout.
+    /// Specifying a timeout of [`PollTimeout::ZERO`] causes poll() to return immediately, even if no file descriptors are ready.
     ///
     /// You might want to look into polling multiple file descriptors at once by using [CecDevice::as_raw_fd] or [tokio::AsyncCec].
     // When the function timed out it returns a value of zero, on failure it returns -1 and the errno variable is set appropriately.
     #[cfg(feature = "poll")]
     #[cfg_attr(docsrs, doc(cfg(feature = "poll")))]
-    pub fn poll(&self, events: PollFlags, timeout: i32) -> Result<PollFlags> {
-        let mut fds = [PollFd::new(&self.0, events)];
+    pub fn poll<T: Into<PollTimeout>>(&self, events: PollFlags, timeout: T) -> Result<PollFlags> {
+        let mut fds = [PollFd::new(self.0.as_fd(), events)];
         poll(&mut fds, timeout)?;
         fds[0].revents().ok_or(std::io::ErrorKind::Other.into())
     }
     /// query information on the devices capabilities. See [CecCaps]
     pub fn get_capas(&self) -> Result<CecCaps> {
-        let mut capas = CecCaps::default();
-        unsafe { capabilities(self.0.as_raw_fd(), &mut capas) }?;
-        Ok(capas)
+        let mut capas = MaybeUninit::uninit();
+        unsafe { capabilities(self.0.as_raw_fd(), capas.as_mut_ptr()) }?;
+        Ok(unsafe { capas.assume_init() })
     }
     /// Change this handles mode.
     ///
@@ -157,26 +156,15 @@ impl CecDevice {
     }
     /// Query logical addresses
     pub fn get_log(&self) -> Result<CecLogAddrs> {
-        let mut log = CecLogAddrs {
-            log_addr: Default::default(),
-            log_addr_mask: Default::default(),
-            cec_version: Version::V1_4,
-            num_log_addrs: 0,
-            vendor_id: 0,
-            flags: CecLogAddrFlags::empty(),
-            osd_name: Default::default(),
-            primary_device_type: [CecPrimDevType::TV; 4],
-            log_addr_type: [CecLogAddrType::TV; 4],
-            all_device_types: [0; 4],
-            features: [[0; 4]; 12],
-        };
-        unsafe { get_log(self.0.as_raw_fd(), &mut log) }?;
-        Ok(log)
+        let mut log = MaybeUninit::uninit();
+        unsafe { get_log(self.0.as_raw_fd(), log.as_mut_ptr()) }?;
+        Ok(unsafe { log.assume_init() })
     }
     pub fn get_event(&self) -> Result<CecEvent> {
-        let mut evt = CecEventSys::default();
+        let mut evt = MaybeUninit::uninit();
         unsafe {
-            get_event(self.0.as_raw_fd(), &mut evt)?;
+            get_event(self.0.as_raw_fd(), evt.as_mut_ptr())?;
+            let evt = evt.assume_init();
             match evt.typ {
                 CecEventType::LostMsgs => return Ok(CecEvent::LostMsgs(evt.payload.lost_msgs)),
                 CecEventType::StateChange => {
@@ -266,6 +254,9 @@ impl CecDevice {
         msg.reply = wait_for;
         msg.timeout = 1000;
         unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
+        if msg.reply==CecOpcode::FeatureAbort && !msg.tx_status.contains(TxStatus::OK) {
+            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, CecTxError::from(msg)));
+        }
         if msg.reply != CecOpcode::FeatureAbort || (msg.reply==CecOpcode::FeatureAbort && msg.rx_status.contains(RxStatus::FEATURE_ABORT)) {
             let l = msg.len as usize;
             let data = if l > 2 {
@@ -279,14 +270,22 @@ impl CecDevice {
         }
         Err(std::io::Error::new(std::io::ErrorKind::TimedOut, CecTxError::from(msg)))
     }
-    /// receive a single message. the available messages depend on [CecModeFollower]
+    /// receive a single message.
+    /// block forever
+    /// the available messages depend on [CecModeFollower]
+    #[inline]
     pub fn rec(&self) -> Result<CecMsg> {
-        let mut msg = CecMsg::init(
-            CecLogicalAddress::UnregisteredBroadcast,
-            CecLogicalAddress::UnregisteredBroadcast,
-        );
-        unsafe { receive(self.0.as_raw_fd(), &mut msg) }?;
-        Ok(msg)
+        self.rec_for(0)
+    }
+    /// receive a single message.
+    /// block for at most `timeout` ms.
+    /// the available messages depend on [CecModeFollower]
+    pub fn rec_for(&self, timeout: u32) -> Result<CecMsg> {
+        let mut msg = MaybeUninit::uninit();
+        let ptr: *mut CecMsg = msg.as_mut_ptr();
+        unsafe { std::ptr::addr_of_mut!((*ptr).timeout).write(timeout) };
+        unsafe { receive(self.0.as_raw_fd(), ptr) }?;
+        Ok(unsafe { msg.assume_init() })
     }
 }
 

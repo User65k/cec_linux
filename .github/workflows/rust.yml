@@ -20,3 +20,9 @@ jobs:
       run: cargo build
     - name: Run all tests
       run: cargo test --all-features
+    - name: Compile example monitor
+      run: cargo b --example monitor --features="poll"
+    - name: Compile example pass
+      run: cargo b --example pass
+    - name: Compile example switch_power
+      run: cargo b --example switch_power

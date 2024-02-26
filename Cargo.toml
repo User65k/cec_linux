@@ -3,6 +3,7 @@ name = "cec_linux"
 authors = ["User65k <15049544+User65k@users.noreply.github.com>"]
 edition = "2021"
 license = "MIT"
+version = "0.2.0"
 description = "A pure rust library to use the HDMI-CEC linux API"
 
 repository = "https://github.com/User65k/cec_linux"

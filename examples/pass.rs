@@ -1,3 +1,8 @@
+/*!
+ * Simple example of Passthrough Mode.
+ * 
+ * This does what the core would do if not in Passthrough Mode.
+ */
 use cec_linux::*;
 
 fn main() -> std::io::Result<()> {
@@ -59,7 +64,6 @@ fn main() -> std::io::Result<()> {
             Some(Ok(CecOpcode::GivePhysicalAddr)) => {
                 let l = cec.get_log()?;
                 let mut addr = Vec::with_capacity(3);
-                
                 if let Some(log) = l.addresses().first() {
                     addr.extend_from_slice(&physical_addr.to_be_bytes());
                     addr.push((*log).into());

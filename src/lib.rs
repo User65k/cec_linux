@@ -23,10 +23,10 @@
 mod sys;
 #[cfg(feature = "poll")]
 #[cfg_attr(docsrs, doc(cfg(feature = "poll")))]
-pub use nix::poll::PollFlags;
+pub use nix::poll::{PollFlags, PollTimeout};
 #[cfg(feature = "poll")]
 use nix::poll::{poll, PollFd};
-use std::{io::Result, mem::MaybeUninit, os::fd::AsRawFd};
+use std::{io::Result, mem::MaybeUninit, os::fd::{AsFd, AsRawFd}};
 use sys::{
     capabilities, get_event, get_log, get_mode, get_phys, receive, set_log, set_mode, set_phys,
     transmit, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK, TxStatus, RxStatus, CecTxError,
@@ -69,16 +69,15 @@ impl CecDevice {
     /// 2. room in the transmit queue (`POLLOUT` and `POLLWRNORM` flags)
     /// 3. events in the event queue (`POLLPRI` flag)
     ///
-    /// timeout is in milliseconds.  
-    /// Specifying a negative value in timeout means an infinite timeout.
-    /// Specifying a timeout of zero causes poll() to return immediately, even if no file descriptors are ready.
+    /// Specifying a [`PollTimeout::NONE`] in timeout means an infinite timeout.
+    /// Specifying a timeout of [`PollTimeout::ZERO`] causes poll() to return immediately, even if no file descriptors are ready.
     ///
     /// You might want to look into polling multiple file descriptors at once by using [CecDevice::as_raw_fd] or [tokio::AsyncCec].
     // When the function timed out it returns a value of zero, on failure it returns -1 and the errno variable is set appropriately.
     #[cfg(feature = "poll")]
     #[cfg_attr(docsrs, doc(cfg(feature = "poll")))]
-    pub fn poll(&self, events: PollFlags, timeout: i32) -> Result<PollFlags> {
-        let mut fds = [PollFd::new(&self.0, events)];
+    pub fn poll<T: Into<PollTimeout>>(&self, events: PollFlags, timeout: T) -> Result<PollFlags> {
+        let mut fds = [PollFd::new(self.0.as_fd(), events)];
         poll(&mut fds, timeout)?;
         fds[0].revents().ok_or(std::io::ErrorKind::Other.into())
     }

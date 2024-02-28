@@ -1,9 +1,9 @@
 //https://www.avsforum.com/attachments/hdmi-cec-v1-3a-specifications-pdf.2579760/
 
-use std::{mem::MaybeUninit, ptr::addr_of_mut, slice::from_raw_parts_mut};
 use bitflags::bitflags;
 use nix::{ioctl_read, ioctl_readwrite, ioctl_write_ptr};
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
+use std::{mem::MaybeUninit, ptr::addr_of_mut};
 
 //#define CEC_ADAP_G_CAPS         _IOWR('a',  0, struct cec_caps)
 ioctl_readwrite! {
@@ -130,15 +130,16 @@ pub struct CecLogAddrs {
     pub features: [[u8; CEC_MAX_LOG_ADDRS]; 12],
 }
 impl CecLogAddrs {
+    const CEC_LOG_ADDR_INVALID: u8 = 0xff;
     pub fn addresses(&self) -> &[CecLogicalAddress] {
         //If no logical address could be claimed, then it is set to CEC_LOG_ADDR_INVALID.
-        if self.log_addr[0] == 0xff {
+        if self.log_addr[0] == Self::CEC_LOG_ADDR_INVALID {
             return &[];
         }
         //If this adapter is Unregistered, then log_addr[0] is set to 0xf and all others to CEC_LOG_ADDR_INVALID.
         let s = if self.log_addr[0] == 0xf {
             1
-        }else{
+        } else {
             self.num_log_addrs as usize
         };
         // u8 to repr(u8)
@@ -152,7 +153,7 @@ impl CecLogAddrs {
         cec_version: Version,
         osd_name: OSDStr<15>,
         primary_type: &[CecPrimDevType],
-        addr_type: &[CecLogAddrType]
+        addr_type: &[CecLogAddrType],
     ) -> CecLogAddrs {
         assert!(primary_type.len() <= 4);
         assert_eq!(primary_type.len(), addr_type.len());
@@ -166,28 +167,46 @@ impl CecLogAddrs {
             addr_of_mut!((*ptr).cec_version).write(cec_version);
             addr_of_mut!((*ptr).vendor_id).write(vendor_id);
             addr_of_mut!((*ptr).osd_name).write(osd_name);
-            from_raw_parts_mut(addr_of_mut!((*ptr).log_addr_type).cast::<CecLogAddrType>(), addr_type.len()).copy_from_slice(addr_type);
-            from_raw_parts_mut(addr_of_mut!((*ptr).primary_device_type).cast::<CecPrimDevType>(), primary_type.len()).copy_from_slice(primary_type);
-
+            std::ptr::copy(
+                primary_type.as_ptr(),
+                addr_of_mut!((*ptr).primary_device_type).cast(),
+                primary_type.len(),
+            );
+            std::ptr::copy(
+                addr_type.as_ptr(),
+                addr_of_mut!((*ptr).log_addr_type).cast(),
+                addr_type.len(),
+            );
             log.assume_init()
         }
     }
 }
 impl Default for CecLogAddrs {
     fn default() -> Self {
-        Self {
-            log_addr: Default::default(),
-            log_addr_mask: Default::default(),
-            cec_version: Version::V1_4,
-            num_log_addrs: 0,
-            vendor_id: CEC_VENDOR_ID_NONE,
-            flags: CecLogAddrFlags::empty(),
-            osd_name: Default::default(),
-            primary_device_type: [CecPrimDevType::PLAYBACK; 4],
-            log_addr_type: [CecLogAddrType::PLAYBACK; 4],
-            all_device_types: Default::default(),
-            features: Default::default(),
-        }
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+}
+#[cfg(test)]
+mod test_cec_log_addrs {
+    use super::*;
+    #[test]
+    fn default_len_zero() {
+        assert_eq!(CecLogAddrs::default().num_log_addrs, 0);
+    }
+    #[test]
+    fn new() {
+        let a = CecLogAddrs::new(
+            VendorID::NONE,
+            Version::V1_4,
+            "test".to_string().try_into().unwrap(),
+            &[CecPrimDevType::PLAYBACK],
+            &[CecLogAddrType::PLAYBACK],
+        );
+        assert_eq!(a.num_log_addrs, 1);
+        assert_eq!(a.vendor_id, VendorID::NONE);
+        assert_eq!(a.cec_version, Version::V1_4);
+        assert_eq!(a.log_addr_type[0], CecLogAddrType::PLAYBACK);
+        assert_eq!(a.primary_device_type[0], CecPrimDevType::PLAYBACK);
     }
 }
 
@@ -249,26 +268,91 @@ ioctl_read! {
     get_phys, b'a',  1, u16
 }
 
-/*
+/**
+ * The physical address is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
+ * For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.  
+ *
  * phys_addr is either 0 (if this is the CEC root device)
  * or a valid physical address obtained from the sink's EDID
  * as read by this CEC device (if this is a source device)
  * or a physical address obtained and modified from a sink
  * EDID and used for a sink CEC device.
- * If nothing is connected, then phys_addr is 0xffff.
- * See HDMI 1.4b, section 8.7 (Physical Address).
  *
- * The CEC_ADAP_S_PHYS_ADDR ioctl may not be available if that is handled
- * internally.
+ * If nothing is connected, then phys_addr is [CecPhysicalAddress::INVALID].
+ * See HDMI 1.4b, section 8.7 (Physical Address).
  */
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CecPhysicalAddress(u16);
+impl CecPhysicalAddress {
+    pub const INVALID: CecPhysicalAddress = CecPhysicalAddress::from_num(0xffff);
+    pub const fn from_bytes(bytes: [u8; 2]) -> CecPhysicalAddress {
+        CecPhysicalAddress(u16::from_be_bytes(bytes))
+    }
+    pub const fn from_num(num: u16) -> CecPhysicalAddress {
+        CecPhysicalAddress(num)
+    }
+    pub const fn to_bytes(&self) -> [u8; 2] {
+        self.0.to_be_bytes()
+    }
+    pub const fn to_num(&self) -> u16 {
+        self.0
+    }
+}
+impl From<u16> for CecPhysicalAddress {
+    fn from(value: u16) -> Self {
+        CecPhysicalAddress::from_num(value)
+    }
+}
+impl From<[u8; 2]> for CecPhysicalAddress {
+    fn from(value: [u8; 2]) -> Self {
+        CecPhysicalAddress::from_bytes(value)
+    }
+}
+impl PartialEq<u16> for CecPhysicalAddress {
+    fn eq(&self, other: &u16) -> bool {
+        self.0 == *other
+    }
+}
+impl PartialEq<[u8; 2]> for CecPhysicalAddress {
+    fn eq(&self, other: &[u8; 2]) -> bool {
+        self.0 == CecPhysicalAddress::from_bytes(*other).0
+    }
+}
+impl PartialEq<&[u8]> for CecPhysicalAddress {
+    fn eq(&self, other: &&[u8]) -> bool {
+        let bytes = match (*other).try_into() {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        self.0 == CecPhysicalAddress::from_bytes(bytes).0
+    }
+}
+impl std::fmt::Debug for CecPhysicalAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{:x}.{:x}.{:x}.{:x}",
+            (self.0 & 0xf000) >> 12,
+            (self.0 & 0xf00) >> 8,
+            (self.0 & 0xf0) >> 4,
+            self.0 & 0xf
+        ))
+    }
+}
+#[test]
+fn phys() {
+    assert_eq!(
+        "3.3.0.0",
+        format!("{:?}", CecPhysicalAddress::from_num(0x3300))
+    );
+    assert_eq!(CecPhysicalAddress::from_num(0x3300), 0x3300);
+    assert_eq!(CecPhysicalAddress::from_bytes([0x33, 0]), 0x3300);
+    assert_eq!(CecPhysicalAddress::from_num(0x3300), &b"\x33\x00"[..]);
+    assert_eq!(CecPhysicalAddress::from_num(0x3300), [0x33, 0]);
+}
+
 //#define CEC_ADAP_S_PHYS_ADDR    _IOW('a',  2, __u16)
 ioctl_write_ptr! {
-    /// The ioctl CEC_ADAP_S_PHYS_ADDR is only available if CEC_CAP_PHYS_ADDR is set (the ENOTTY error code will be returned otherwise). The ioctl CEC_ADAP_S_PHYS_ADDR can only be called by a file descriptor in initiator mode (see ioctls CEC_G_MODE and CEC_S_MODE), if not the EBUSY error code will be returned.
-    /// To clear an existing physical address use CEC_PHYS_ADDR_INVALID. The adapter will go to the unconfigured state.
-    /// If logical address types have been defined (see ioctl CEC_ADAP_S_LOG_ADDRS), then this ioctl will block until all requested logical addresses have been claimed. If the file descriptor is in non-blocking mode then it will not wait for the logical addresses to be claimed, instead it just returns 0.
-    /// A CEC_EVENT_STATE_CHANGE event is sent when the physical address changes.
-    /// The physical address is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.
-    /// For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.
     set_phys, b'a',  2, u16
 }
 
@@ -540,7 +624,7 @@ impl From<CecMsg> for CecTxError {
             tx_arb_lost_cnt: msg.tx_arb_lost_cnt,
             tx_nack_cnt: msg.tx_nack_cnt,
             tx_low_drive_cnt: msg.tx_low_drive_cnt,
-            tx_error_cnt: msg.tx_error_cnt,            
+            tx_error_cnt: msg.tx_error_cnt,
         }
     }
 }
@@ -562,10 +646,6 @@ impl std::fmt::Display for CecTxError {
         Ok(())
     }
 }
-/*
-const CEC_LOG_ADDR_INVALID: u8 = 0xff;
-const CEC_PHYS_ADDR_INVALID: u16 = 0xffff;
-*/
 /**
  * The maximum number of logical addresses one device can be assigned to.
  * The CEC 2.0 spec allows for only 2 logical addresses at the moment. The
@@ -575,7 +655,7 @@ const CEC_MAX_LOG_ADDRS: usize = 4;
 
 /**
  * The logical addresses defined by CEC 2.0
- * 
+ *
  * Switches should use UNREGISTERED.
  * Processors should use SPECIFIC.
  */
@@ -603,7 +683,7 @@ pub enum CecLogicalAddress {
 
 bitflags! {
     /// The bitmask of all logical addresses this adapter has claimed.
-    /// 
+    ///
     /// If this adapter is not configured at all, then log_addr_mask is set to 0.
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct CecLogAddrMask: u16 {
@@ -668,7 +748,7 @@ bitflags! {
 #[repr(C)]
 pub struct CecEventStateChange {
     ///the current physical address
-    pub phys_addr: u16,
+    pub phys_addr: CecPhysicalAddress,
     /// The current set of claimed logical addresses.
     /// This is 0 if no logical addresses are claimed or if `phys_addr`` is CEC_PHYS_ADDR_INVALID.
     pub log_addr_mask: CecLogAddrMask,
@@ -720,7 +800,7 @@ ioctl_readwrite! {
 pub enum CecOpcode {
     /* One Touch Play Feature */
     /// Used by a new source to indicate that it has started to transmit a stream OR used in response to a [CecOpcode::RequestActiveSource]  
-    /// __Parameters:__ 2byte - physical address of active source
+    /// __Parameters:__ [CecPhysicalAddress]
     ActiveSource = 0x82,
     /// Sent by a source device to the TV whenever it enters the active state (alternatively it may send [CecOpcode::TextViewOn]).
     /// The TV should then turn on (if not on). If in ‘Text Display’ state then the TV enters ‘Image Display’ state.
@@ -734,20 +814,20 @@ pub enum CecOpcode {
      *      ACTIVE_SOURCE
      */
     /// Used by the currently active source to inform the TV that it has no video to be presented to the user, or is going into standby as the result of a local user command on the device.  
-    /// __Parameters:__ 2byte - physical address of active source
+    /// __Parameters:__ [CecPhysicalAddress] of active source
     InactiveSource = 0x9d,
     /// Used by a new device to discover the status of the system.
     RequestActiveSource = 0x85,
     /// Sent by a CEC Switch when it is manually switched to inform all other devices on the network that the active route below the switch has changed.  
     /// __Parameters:__
-    /// - 2byte - old physical address
-    /// - 2byte - new physical address
+    /// - old [CecPhysicalAddress]
+    /// - new [CecPhysicalAddress]
     RoutingChange = 0x80,
     /// Sent by a CEC Switch to indicate the active route below the switch.  
-    /// __Parameters:__ 2byte - physical address
+    /// __Parameters:__ [CecPhysicalAddress]
     RoutingInformation = 0x81,
     /// Used by the TV to request a streaming path from the specified physical address.  
-    /// __Parameters:__ 2byte - physical address
+    /// __Parameters:__ [CecPhysicalAddress]
     SetStreamPath = 0x86,
 
     /* Standby Feature */
@@ -767,8 +847,8 @@ pub enum CecOpcode {
     GetMenuLanguage = 0x91,
     /// Used to inform all other devices of the mapping between physical and logical address of the initiator.  
     /// __Parameters:__
-    /// - 2b physical address
-    /// - 1b [Device Type]
+    /// - [CecPhysicalAddress]
+    /// - [CecLogicalAddress]
     ReportPhysicalAddr = 0x84,
     /// Used by a TV or another device to indicate the menu language.  
     /// __Parameters:__ [Language]
@@ -920,7 +1000,7 @@ pub enum CecOpcode {
      * Requests to use [System Audio Mode](CecOpcode::SystemAudioModeStatus) to the amplifier
      *
      * __Parameters:__
-     * 2b physical address of device to be used as source of the audio stream.
+     * [CecPhysicalAddress] of device to be used as source of the audio stream.
      * **OR**:  
      * no payload
      *
@@ -1258,11 +1338,13 @@ pub struct CecTimer {
 
 #[repr(transparent)]
 pub struct VendorID(pub [u8; 3]);
-/*
- * Use this if there is no vendor ID (CEC_G_VENDOR_ID) or if the vendor ID
- * should be disabled (CEC_S_VENDOR_ID)
- */
-pub const CEC_VENDOR_ID_NONE: u32 = 0xffffffff;
+impl VendorID {
+    /**
+     * Use this if there is no vendor ID (CEC_G_VENDOR_ID) or if the vendor ID
+     * should be disabled (CEC_S_VENDOR_ID)
+     */
+    pub const NONE: u32 = 0xffffffff;
+}
 
 bitflags! {
     /// Repeat recording or don't (if zero)

@@ -1,6 +1,6 @@
 use crate::{
     CecCaps, CecEvent, CecLogAddrs, CecLogicalAddress, CecModeFollower, CecModeInitiator, CecMsg,
-    CecOpcode,
+    CecOpcode, CecPhysicalAddress,
 };
 use nix::libc::O_NONBLOCK;
 use std::fs::OpenOptions;
@@ -69,7 +69,7 @@ impl AsyncCec {
     pub fn get_log(&self) -> Result<CecLogAddrs> {
         self.0.get_ref().get_log()
     }
-    pub fn get_phys(&self) -> Result<u16> {
+    pub fn get_phys(&self) -> Result<CecPhysicalAddress> {
         self.0.get_ref().get_phys()
     }
     pub fn set_log(&self, log: CecLogAddrs) -> Result<()> {
@@ -78,7 +78,7 @@ impl AsyncCec {
     pub fn set_mode(&self, initiator: CecModeInitiator, follower: CecModeFollower) -> Result<()> {
         self.0.get_ref().set_mode(initiator, follower)
     }
-    pub fn set_phys(&self, addr: u16) -> Result<()> {
+    pub fn set_phys(&self, addr: CecPhysicalAddress) -> Result<()> {
         self.0.get_ref().set_phys(addr)
     }
 }

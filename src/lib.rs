@@ -22,21 +22,26 @@
  */
 mod sys;
 #[cfg(feature = "poll")]
+use nix::poll::{poll, PollFd};
+#[cfg(feature = "poll")]
 #[cfg_attr(docsrs, doc(cfg(feature = "poll")))]
 pub use nix::poll::{PollFlags, PollTimeout};
-#[cfg(feature = "poll")]
-use nix::poll::{poll, PollFd};
-use std::{io::Result, mem::MaybeUninit, os::fd::{AsFd, AsRawFd}};
+use std::{
+    io::Result,
+    mem::MaybeUninit,
+    os::fd::{AsFd, AsRawFd},
+};
 use sys::{
     capabilities, get_event, get_log, get_mode, get_phys, receive, set_log, set_mode, set_phys,
-    transmit, CecEventType, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK, TxStatus, RxStatus, CecTxError,
+    transmit, CecEventType, CecTxError, RxStatus, TxStatus, CEC_MODE_FOLLOWER_MSK,
+    CEC_MODE_INITIATOR_MSK,
 };
 pub use sys::{
     Capabilities, CecAbortReason, CecCaps, CecEventLostMsgs, CecEventStateChange, CecLogAddrFlags,
     CecLogAddrMask, CecLogAddrType, CecLogAddrs, CecLogicalAddress, CecModeFollower,
-    CecModeInitiator, CecMsg, CecOpcode, CecPowerStatus, CecPrimDevType, CecTimer,
-    CecUserControlCode, DeckControlMode, DeckInfo, DisplayControl, MenuRequestType, OSDStr,
-    PlayMode, RecordingSequence, StatusRequest, VendorID, Version, CEC_VENDOR_ID_NONE,
+    CecModeInitiator, CecMsg, CecOpcode, CecPhysicalAddress, CecPowerStatus, CecPrimDevType,
+    CecTimer, CecUserControlCode, DeckControlMode, DeckInfo, DisplayControl, MenuRequestType,
+    OSDStr, PlayMode, RecordingSequence, StatusRequest, VendorID, Version,
 };
 
 #[cfg(feature = "tokio")]
@@ -115,24 +120,19 @@ impl CecDevice {
      * Only available if [Capabilities::PHYS_ADDR] is set. May not be available if that is handled internally.
      * __Not__ possible with [CecModeInitiator::None].
      *
-     * To clear an existing physical address use CEC_PHYS_ADDR_INVALID. The adapter will go to the unconfigured state.  
+     * To clear an existing physical address use [CecPhysicalAddress::INVALID]. The adapter will go to the unconfigured state.  
      * If logical address types have been defined (see [CecDevice::set_log]), then it will block until all requested logical addresses have been claimed. If the file descriptor is in non-blocking mode then it will not wait for the logical addresses to be claimed, instead it just returns.
      *
-     * A CEC_EVENT_STATE_CHANGE event is sent when the physical address changes.
-     *
-     * The physical address is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
-     * For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.  
-     * If nothing is connected, then phys_addr is 0xffff.
-     * See HDMI 1.4b, section 8.7 (Physical Address).
+     * A [CecEvent::StateChange] event is sent when the physical address changes.
      */
-    pub fn set_phys(&self, addr: u16) -> Result<()> {
+    pub fn set_phys(&self, addr: CecPhysicalAddress) -> Result<()> {
         unsafe { set_phys(self.0.as_raw_fd(), &addr) }?;
         Ok(())
     }
     /// Query physical addresses
-    /// e.g. 0x3300 -> 3.3.0.0
-    pub fn get_phys(&self) -> Result<u16> {
-        let mut addr = 0;
+    /// If nothing is connected, then phys_addr is [CecPhysicalAddress::INVALID].
+    pub fn get_phys(&self) -> Result<CecPhysicalAddress> {
+        let mut addr = CecPhysicalAddress::INVALID;
         unsafe { get_phys(self.0.as_raw_fd(), &mut addr) }?;
         Ok(addr)
     }
@@ -142,12 +142,12 @@ impl CecDevice {
      *  Only available if [Capabilities::LOG_ADDRS] is set.
      * __Not__ possible with [CecModeInitiator::None].
      *
-     *  To clear existing logical addresses set num_log_addrs to 0. All other fields will be ignored in that case. The adapter will go to the unconfigured state.
+     *  To clear existing logical addresses set [CecLogAddrs::default()]. The adapter will go to the unconfigured state.
      *  Attempting to call set_log when logical address types are already defined will return with error EBUSY.
      *
      *  If the physical address is valid (see [CecDevice::set_phys]), then it will block until all requested logical addresses have been claimed. If the file descriptor is in non-blocking mode then it will not wait for the logical addresses to be claimed, instead it just returns.
      *
-     *  A CEC_EVENT_STATE_CHANGE event is sent when the logical addresses are claimed or cleared.
+     *  A [CecEvent::StateChange] event is sent when the logical addresses are claimed or cleared.
      *
      * */
     pub fn set_log(&self, mut log: CecLogAddrs) -> Result<()> {
@@ -193,7 +193,7 @@ impl CecDevice {
         self.transmit(from, to, CecOpcode::UserControlReleased)
     }
     /// send a cec command without parameters to a remote device
-    /// 
+    ///
     /// transmitting from an address not in [CecLogAddrMask] will return InvalidInput
     pub fn transmit(
         &self,
@@ -254,21 +254,30 @@ impl CecDevice {
         msg.reply = wait_for;
         msg.timeout = 1000;
         unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
-        if msg.reply==CecOpcode::FeatureAbort && !msg.tx_status.contains(TxStatus::OK) {
-            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, CecTxError::from(msg)));
+        if msg.reply == CecOpcode::FeatureAbort && !msg.tx_status.contains(TxStatus::OK) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                CecTxError::from(msg),
+            ));
         }
-        if msg.reply != CecOpcode::FeatureAbort || (msg.reply==CecOpcode::FeatureAbort && msg.rx_status.contains(RxStatus::FEATURE_ABORT)) {
+        if msg.reply != CecOpcode::FeatureAbort
+            || (msg.reply == CecOpcode::FeatureAbort
+                && msg.rx_status.contains(RxStatus::FEATURE_ABORT))
+        {
             let l = msg.len as usize;
             let data = if l > 2 {
-                let mut data = Vec::with_capacity(l-2);
+                let mut data = Vec::with_capacity(l - 2);
                 data.extend_from_slice(&msg.msg[2..l]);
                 data
-            }else{
+            } else {
                 Vec::with_capacity(0)
             };
             return Ok(data);
         }
-        Err(std::io::Error::new(std::io::ErrorKind::TimedOut, CecTxError::from(msg)))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            CecTxError::from(msg),
+        ))
     }
     /// receive a single message.
     /// block forever
@@ -295,6 +304,7 @@ impl AsRawFd for CecDevice {
     }
 }
 
+/// Event returned by [CecDevice::get_event]
 #[derive(Debug)]
 pub enum CecEvent {
     /// Event that occurs when the adapter state changes
@@ -306,9 +316,12 @@ pub enum CecEvent {
 
 /// Turn a message into io::Result
 fn msg_to_io_result(msg: CecMsg) -> Result<()> {
-    if msg.tx_status.contains(TxStatus::OK){
+    if msg.tx_status.contains(TxStatus::OK) {
         Ok(())
-    }else{
-        Err(std::io::Error::new(std::io::ErrorKind::Other, CecTxError::from(msg)))
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            CecTxError::from(msg),
+        ))
     }
 }

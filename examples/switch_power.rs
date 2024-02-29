@@ -2,7 +2,7 @@
  * Set Logic address and switch Devices from and to standby
  */
 
- use std::{thread::sleep, time::Duration};
+use std::{thread::sleep, time::Duration};
 
 use cec_linux::*;
 
@@ -16,7 +16,13 @@ fn main() -> std::io::Result<()> {
     cec.set_log(log)?;
 
     // set new address (PLAYBACK)
-    let log = CecLogAddrs::new(CEC_VENDOR_ID_NONE, Version::V1_4, "pi4".to_string().try_into().unwrap(), &[CecPrimDevType::PLAYBACK], &[CecLogAddrType::PLAYBACK]);
+    let log = CecLogAddrs::new(
+        VendorID::NONE,
+        Version::V1_4,
+        "pi4".to_string().try_into().unwrap(),
+        &[CecPrimDevType::PLAYBACK],
+        &[CecLogAddrType::PLAYBACK],
+    );
     cec.set_log(log)?;
 
     // ask Audiosystem to turn on (from standby)

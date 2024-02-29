@@ -28,13 +28,7 @@ fn main() -> std::io::Result<()> {
             if msg.is_ok() {
                 match (msg.initiator(), msg.destination(), msg.opcode()) {
                     (i, d, Some(Ok(o))) => {
-                        println!(
-                            "msg {:?}->{:?} {:?} {:x?}",
-                            i,
-                            d,
-                            o,
-                            msg.parameters()
-                        );
+                        println!("msg {:?}->{:?} {:?} {:x?}", i, d, o, msg.parameters());
                     }
                     _ => println!("msg {:x?}", msg),
                 }

@@ -126,15 +126,15 @@ impl CecDevice {
      * A [CecEvent::StateChange] event is sent when the physical address changes.
      */
     pub fn set_phys(&self, addr: CecPhysicalAddress) -> Result<()> {
-        unsafe { set_phys(self.0.as_raw_fd(), &addr.to_num()) }?;
+        unsafe { set_phys(self.0.as_raw_fd(), &addr) }?;
         Ok(())
     }
     /// Query physical addresses
     /// If nothing is connected, then phys_addr is [CecPhysicalAddress::INVALID].
     pub fn get_phys(&self) -> Result<CecPhysicalAddress> {
-        let mut addr = 0;
+        let mut addr = CecPhysicalAddress::INVALID;
         unsafe { get_phys(self.0.as_raw_fd(), &mut addr) }?;
-        Ok(CecPhysicalAddress::from_num(addr))
+        Ok(addr)
     }
     /**
      *  Set logical address.

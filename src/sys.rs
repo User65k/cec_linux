@@ -287,7 +287,7 @@ const CEC_OP_ALL_DEVTYPE_SWITCH: u8 = 0x04;
 ioctl_read! {
     /// Query physical addresses
     /// Filled by the driver.
-    get_phys, b'a',  1, u16
+    get_phys, b'a',  1, CecPhysicalAddress
 }
 
 /**
@@ -375,7 +375,7 @@ fn phys() {
 
 //#define CEC_ADAP_S_PHYS_ADDR    _IOW('a',  2, __u16)
 ioctl_write_ptr! {
-    set_phys, b'a',  2, u16
+    set_phys, b'a',  2, CecPhysicalAddress
 }
 
 //#define CEC_G_MODE              _IOR('a',  8, __u32)

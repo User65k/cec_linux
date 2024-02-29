@@ -95,7 +95,7 @@ ioctl_read! {
 #[repr(C)]
 pub struct CecLogAddrs {
     /// the claimed logical addresses. Set by the driver.
-    log_addr: [u8; CEC_MAX_LOG_ADDRS],
+    log_addr: [u8; Self::CEC_MAX_LOG_ADDRS],
     /// current logical address mask. Set by the driver.
     log_addr_mask: CecLogAddrMask,
 
@@ -106,8 +106,6 @@ pub struct CecLogAddrs {
     ///
     /// Must be ≤ [CecCaps::available_log_addrs].
     /// All arrays in this structure are only filled up to index available_log_addrs-1. The remaining array elements will be ignored.
-    ///
-    /// Note that the CEC 2.0 standard allows for a maximum of 2 logical addresses, although some hardware has support for more. CEC_MAX_LOG_ADDRS is 4.
     ///
     /// The driver will return the actual number of logical addresses it could claim, which may be less than what was requested.
     ///
@@ -120,16 +118,24 @@ pub struct CecLogAddrs {
     /// Used for [CecOpcode::SetOsdName]
     pub osd_name: OSDStr<15>,
     /// the primary device type for each logical address. Set by the caller.
-    primary_device_type: [CecPrimDevType; CEC_MAX_LOG_ADDRS],
+    primary_device_type: [CecPrimDevType; Self::CEC_MAX_LOG_ADDRS],
     /// the logical address types. Set by the caller.
-    log_addr_type: [CecLogAddrType; CEC_MAX_LOG_ADDRS],
+    log_addr_type: [CecLogAddrType; Self::CEC_MAX_LOG_ADDRS],
 
     /// CEC 2.0: all device types represented by the logical address. Set by the caller. Used in [CecOpcode::ReportFeatures].
-    pub all_device_types: [u8; CEC_MAX_LOG_ADDRS],
+    pub all_device_types: [u8; Self::CEC_MAX_LOG_ADDRS],
     /// CEC 2.0: The logical address features. Set by the caller. Used in [CecOpcode::ReportFeatures].
-    pub features: [[u8; CEC_MAX_LOG_ADDRS]; 12],
+    pub features: [[u8; Self::CEC_MAX_LOG_ADDRS]; 12],
 }
 impl CecLogAddrs {
+
+    /**
+     * The maximum number of logical addresses one device can be assigned to.
+     * The CEC 2.0 spec allows for only 2 logical addresses at the moment. The
+     * Analog Devices CEC hardware supports 3. So let's go wild and go for 4.
+     */
+    const CEC_MAX_LOG_ADDRS: usize = 4;
+
     const CEC_LOG_ADDR_INVALID: u8 = 0xff;
     pub fn addresses(&self) -> &[CecLogicalAddress] {
         //If no logical address could be claimed, then it is set to CEC_LOG_ADDR_INVALID.
@@ -148,6 +154,22 @@ impl CecLogAddrs {
     pub fn mask(&self) -> CecLogAddrMask {
         self.log_addr_mask
     }
+    /// Request certain address type on the CEC Bus.
+    /// 
+    /// The claimed [CecLogicalAddress]es will also depend on the other devices on the bus.
+    /// 
+    /// The length of the Type slices must be ≤ [CecCaps::available_log_addrs].
+    /// Note that the CEC 2.0 standard allows for a maximum of 2 logical addresses, although some hardware has support for more.
+    /// The driver will return the actual number of logical addresses it could claim, which may be less than what was requested.
+    /// 
+    /// The provided values are also used by responses sent from the core (see [CecModeFollower::ExclusivePassthru]):
+    /// 
+    /// |Param           | used as reply to                | Info                                      |
+    /// |----------------|---------------------------------|-------------------------------------------|
+    /// | `vendor_id`    | [CecOpcode::GiveDeviceVendorId] | Use VendorID::NONE to disable the feature |
+    /// | `cec_version`  | [CecOpcode::GetCecVersion]      |                                           |
+    /// | `osd_name`     | [CecOpcode::GiveOsdName]        |                                           |
+    /// 
     pub fn new(
         vendor_id: u32,
         cec_version: Version,
@@ -155,7 +177,7 @@ impl CecLogAddrs {
         primary_type: &[CecPrimDevType],
         addr_type: &[CecLogAddrType],
     ) -> CecLogAddrs {
-        assert!(primary_type.len() <= 4);
+        assert!(primary_type.len() <= Self::CEC_MAX_LOG_ADDRS);
         assert_eq!(primary_type.len(), addr_type.len());
 
         let num_log_addrs = primary_type.len() as u8;
@@ -646,12 +668,6 @@ impl std::fmt::Display for CecTxError {
         Ok(())
     }
 }
-/**
- * The maximum number of logical addresses one device can be assigned to.
- * The CEC 2.0 spec allows for only 2 logical addresses at the moment. The
- * Analog Devices CEC hardware supports 3. So let's go wild and go for 4.
- */
-const CEC_MAX_LOG_ADDRS: usize = 4;
 
 /**
  * The logical addresses defined by CEC 2.0

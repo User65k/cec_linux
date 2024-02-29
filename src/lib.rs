@@ -304,6 +304,7 @@ impl AsRawFd for CecDevice {
     }
 }
 
+/// Event returned by [CecDevice::get_event]
 #[derive(Debug)]
 pub enum CecEvent {
     /// Event that occurs when the adapter state changes

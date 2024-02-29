@@ -90,7 +90,7 @@ ioctl_read! {
     get_log, b'a',  3, CecLogAddrs
 }
 
-/// CEC logical addresses structure
+/// CEC logical addresses structure used by [CecDevice::set_log](super::CecDevice::set_log) and [CecDevice::get_log](super::CecDevice::get_log)
 #[derive(Debug)]
 #[repr(C)]
 pub struct CecLogAddrs {
@@ -291,7 +291,9 @@ ioctl_read! {
 }
 
 /**
- * The physical address is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
+ * CEC physical address
+ * 
+ * It is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
  * For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.  
  *
  * phys_addr is either 0 (if this is the CEC root device)
@@ -464,6 +466,7 @@ ioctl_readwrite! {
 
 const CEC_MAX_MSG_SIZE: usize = 16;
 
+/// CEC message returned from [CecDevice::rec](super::CecDevice::rec) and  [CecDevice::rec_for](super::CecDevice::rec_for)
 #[derive(Debug)]
 #[repr(C)]
 pub struct CecMsg {
@@ -759,7 +762,7 @@ bitflags! {
     }
 }
 
-///used when the CEC adapter changes state.
+///[CecEvent](super::CecEvent) used when the CEC adapter changes state.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct CecEventStateChange {
@@ -770,7 +773,7 @@ pub struct CecEventStateChange {
     pub log_addr_mask: CecLogAddrMask,
 }
 
-///tells you how many messages were lost due
+///[CecEvent](super::CecEvent) that tells you how many messages were lost
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct CecEventLostMsgs {
@@ -811,6 +814,8 @@ ioctl_readwrite! {
      */
     get_event, b'a',  7, CecEvent
 }
+
+/// The opcode of a [CecMsg]
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Clone, Copy)]
 #[repr(u8)]
 pub enum CecOpcode {
@@ -1363,9 +1368,9 @@ impl VendorID {
 }
 
 bitflags! {
-    /// Repeat recording or don't (if zero)
-    ///
     /// Payload of [CecOpcode::SetAnalogueTimer], [CecOpcode::SetDigitalTimer] or [CecOpcode::SetExtTimer]
+    ///
+    /// Repeat recording or don't (if zero)
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct RecordingSequence : u8 {
         const SUNDAY = 0x01;
@@ -1394,6 +1399,8 @@ pub enum CecPowerStatus {
 type c_char = u8; //its actually i8, but that sucks
 
 /**
+ * Payload of [CecOpcode::SetOsdString] and [CecOpcode::SetOsdName]
+ * 
  * Create it from a String (String has to be ascii)
  * ```
  * # use cec_linux::OSDStr;

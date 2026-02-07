@@ -3,7 +3,6 @@
 use bitflags::bitflags;
 use nix::{ioctl_read, ioctl_readwrite, ioctl_write_ptr};
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
-// use std::{mem::MaybeUninit, ptr::addr_of_mut};
 
 //#define CEC_ADAP_G_CAPS         _IOWR('a',  0, struct cec_caps)
 ioctl_readwrite! {
@@ -179,27 +178,6 @@ impl CecLogAddrs {
         assert!(primary_type.len() <= Self::CEC_MAX_LOG_ADDRS);
         assert_eq!(primary_type.len(), addr_type.len());
 
-        // let num_log_addrs = primary_type.len() as u8;
-
-        // let mut log = MaybeUninit::uninit();
-        // let ptr: *mut CecLogAddrs = log.as_mut_ptr();
-        // unsafe {
-        //     addr_of_mut!((*ptr).num_log_addrs).write(num_log_addrs);
-        //     addr_of_mut!((*ptr).cec_version).write(cec_version);
-        //     addr_of_mut!((*ptr).vendor_id).write(vendor_id);
-        //     addr_of_mut!((*ptr).osd_name).write(osd_name);
-        //     std::ptr::copy(
-        //         primary_type.as_ptr(),
-        //         addr_of_mut!((*ptr).primary_device_type).cast(),
-        //         primary_type.len(),
-        //     );
-        //     std::ptr::copy(
-        //         addr_type.as_ptr(),
-        //         addr_of_mut!((*ptr).log_addr_type).cast(),
-        //         addr_type.len(),
-        //     );
-        //     log.assume_init()
-        // }
         let mut log = CecLogAddrs {
             num_log_addrs: primary_type.len() as u8,
             cec_version,
@@ -214,11 +192,6 @@ impl CecLogAddrs {
         log
     }
 }
-// impl Default for CecLogAddrs {
-//     fn default() -> Self {
-//         unsafe { MaybeUninit::zeroed().assume_init() }
-//     }
-// }
 #[cfg(test)]
 mod test_cec_log_addrs {
     use super::*;

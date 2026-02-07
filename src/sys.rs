@@ -57,19 +57,26 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Capabilities: u32 {
         /// Userspace has to configure the physical address. Do so via [CecDevice::set_phys](super::CecDevice::set_phys)
-        const PHYS_ADDR = 0b00000001;
+        const PHYS_ADDR = (1 << 0);
         /// Userspace has to configure the logical addresses. Do so via [CecDevice::set_log](super::CecDevice::set_log)
-        const LOG_ADDRS = 0b00000010;
+        const LOG_ADDRS = (1 << 1);
         /// Userspace can transmit messages (and thus become [follower](CecModeFollower) as well)
-        const TRANSMIT = 0b00000100;
-
+        const TRANSMIT = (1 << 2);
         /// Passthrough all messages instead of processing them.
-        const PASSTHROUGH = 0b00001000;
+        const PASSTHROUGH = (1 << 3);
         /// Supports remote control
-        const RC = 0b00010000;
+        const RC = (1 << 4);
         /// Hardware can monitor all messages, not just directed and broadcast.
         /// Needed for [CecModeFollower::MonitorAll]
-        const MONITOR_ALL = 0b00100000;
+        const MONITOR_ALL = (1 << 5);
+        /// Hardware can use CEC only if the HDMI HPD pin is high.
+        const NEEDS_HPD = (1 << 6);
+        /// Hardware can monitor CEC pin transitions */
+        const MONITOR_PIN =	(1 << 7);
+        /// CEC_ADAP_G_CONNECTOR_INFO is available */
+        const CONNECTOR_INFO = (1 << 8);
+        /// CEC_MSG_FL_REPLY_VENDOR_ID is available */
+        const REPLY_VENDOR_ID =	(1 << 9);
     }
 }
 
@@ -128,7 +135,6 @@ pub struct CecLogAddrs {
     pub features: [[u8; Self::CEC_MAX_LOG_ADDRS]; 12],
 }
 impl CecLogAddrs {
-
     /**
      * The maximum number of logical addresses one device can be assigned to.
      * The CEC 2.0 spec allows for only 2 logical addresses at the moment. The
@@ -155,21 +161,21 @@ impl CecLogAddrs {
         self.log_addr_mask
     }
     /// Request certain address type on the CEC Bus.
-    /// 
+    ///
     /// The claimed [CecLogicalAddress]es will also depend on the other devices on the bus.
-    /// 
+    ///
     /// The length of the Type slices must be ≤ [CecCaps::available_log_addrs].
     /// Note that the CEC 2.0 standard allows for a maximum of 2 logical addresses, although some hardware has support for more.
     /// The driver will return the actual number of logical addresses it could claim, which may be less than what was requested.
-    /// 
+    ///
     /// The provided values are also used by responses sent from the core (see [CecModeFollower::ExclusivePassthru]):
-    /// 
+    ///
     /// |Param           | used as reply to                | Info                                      |
     /// |----------------|---------------------------------|-------------------------------------------|
     /// | `vendor_id`    | [CecOpcode::GiveDeviceVendorId] | Use VendorID::NONE to disable the feature |
     /// | `cec_version`  | [CecOpcode::GetCecVersion]      |                                           |
     /// | `osd_name`     | [CecOpcode::GiveOsdName]        |                                           |
-    /// 
+    ///
     pub fn new(
         vendor_id: u32,
         cec_version: Version,
@@ -292,7 +298,7 @@ ioctl_read! {
 
 /**
  * CEC physical address
- * 
+ *
  * It is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
  * For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.  
  *
@@ -1400,7 +1406,7 @@ type c_char = u8; //its actually i8, but that sucks
 
 /**
  * Payload of [CecOpcode::SetOsdString] and [CecOpcode::SetOsdName]
- * 
+ *
  * Create it from a String (String has to be ascii)
  * ```
  * # use cec_linux::OSDStr;

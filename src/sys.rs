@@ -3,7 +3,6 @@
 use bitflags::bitflags;
 use nix::{ioctl_read, ioctl_readwrite, ioctl_write_ptr};
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
-use std::{mem::MaybeUninit, ptr::addr_of_mut};
 
 //#define CEC_ADAP_G_CAPS         _IOWR('a',  0, struct cec_caps)
 ioctl_readwrite! {
@@ -127,8 +126,12 @@ pub struct CecLogAddrs {
     /// CEC 2.0: The logical address features. Set by the caller. Used in [CecOpcode::ReportFeatures].
     pub features: [[u8; Self::CEC_MAX_LOG_ADDRS]; 12],
 }
+impl Default for CecLogAddrs {
+    fn default() -> Self {
+        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
+    }
+}
 impl CecLogAddrs {
-
     /**
      * The maximum number of logical addresses one device can be assigned to.
      * The CEC 2.0 spec allows for only 2 logical addresses at the moment. The
@@ -155,21 +158,21 @@ impl CecLogAddrs {
         self.log_addr_mask
     }
     /// Request certain address type on the CEC Bus.
-    /// 
+    ///
     /// The claimed [CecLogicalAddress]es will also depend on the other devices on the bus.
-    /// 
+    ///
     /// The length of the Type slices must be ≤ [CecCaps::available_log_addrs].
     /// Note that the CEC 2.0 standard allows for a maximum of 2 logical addresses, although some hardware has support for more.
     /// The driver will return the actual number of logical addresses it could claim, which may be less than what was requested.
-    /// 
+    ///
     /// The provided values are also used by responses sent from the core (see [CecModeFollower::ExclusivePassthru]):
-    /// 
+    ///
     /// |Param           | used as reply to                | Info                                      |
     /// |----------------|---------------------------------|-------------------------------------------|
     /// | `vendor_id`    | [CecOpcode::GiveDeviceVendorId] | Use VendorID::NONE to disable the feature |
     /// | `cec_version`  | [CecOpcode::GetCecVersion]      |                                           |
     /// | `osd_name`     | [CecOpcode::GiveOsdName]        |                                           |
-    /// 
+    ///
     pub fn new(
         vendor_id: u32,
         cec_version: Version,
@@ -179,33 +182,17 @@ impl CecLogAddrs {
     ) -> CecLogAddrs {
         assert!(primary_type.len() <= Self::CEC_MAX_LOG_ADDRS);
         assert_eq!(primary_type.len(), addr_type.len());
-
-        let num_log_addrs = primary_type.len() as u8;
-
-        let mut log = MaybeUninit::uninit();
-        let ptr: *mut CecLogAddrs = log.as_mut_ptr();
-        unsafe {
-            addr_of_mut!((*ptr).num_log_addrs).write(num_log_addrs);
-            addr_of_mut!((*ptr).cec_version).write(cec_version);
-            addr_of_mut!((*ptr).vendor_id).write(vendor_id);
-            addr_of_mut!((*ptr).osd_name).write(osd_name);
-            std::ptr::copy(
-                primary_type.as_ptr(),
-                addr_of_mut!((*ptr).primary_device_type).cast(),
-                primary_type.len(),
-            );
-            std::ptr::copy(
-                addr_type.as_ptr(),
-                addr_of_mut!((*ptr).log_addr_type).cast(),
-                addr_type.len(),
-            );
-            log.assume_init()
-        }
-    }
-}
-impl Default for CecLogAddrs {
-    fn default() -> Self {
-        unsafe { MaybeUninit::zeroed().assume_init() }
+        
+        let mut log = CecLogAddrs {
+            num_log_addrs: primary_type.len() as u8,
+            cec_version,
+            vendor_id,
+            osd_name,
+            ..Default::default()
+        };
+        log.primary_device_type[..primary_type.len()].copy_from_slice(primary_type);
+        log.log_addr_type[..addr_type.len()].copy_from_slice(addr_type);
+        log
     }
 }
 #[cfg(test)]
@@ -227,14 +214,27 @@ mod test_cec_log_addrs {
         assert_eq!(a.num_log_addrs, 1);
         assert_eq!(a.vendor_id, VendorID::NONE);
         assert_eq!(a.cec_version, Version::V1_4);
+        assert_eq!(a.flags, CecLogAddrFlags::empty());
         assert_eq!(a.log_addr_type[0], CecLogAddrType::PLAYBACK);
         assert_eq!(a.primary_device_type[0], CecPrimDevType::PLAYBACK);
+    }
+    #[test]
+    fn default_fields() {
+        let a = CecLogAddrs::new(
+            VendorID::NONE,
+            Version::V1_4,
+            "test".to_string().try_into().unwrap(),
+            &[CecPrimDevType::PLAYBACK],
+            &[CecLogAddrType::PLAYBACK],
+        );
+        assert_eq!(a.all_device_types, [0; 4]);
+        assert_eq!(a.features, [[0; 4]; 12]);
     }
 }
 
 bitflags! {
     /// Flags for [CecLogAddrs]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub struct CecLogAddrFlags : u32 {
         /// By default if no logical address of the requested type can be claimed, then it will go back to the unconfigured state. If this flag is set, then it will fallback to the Unregistered logical address. Note that if the Unregistered logical address was explicitly requested, then this flag has no effect.
         const ALLOW_UNREG_FALLBACK = (1 << 0);
@@ -292,7 +292,7 @@ ioctl_read! {
 
 /**
  * CEC physical address
- * 
+ *
  * It is a 16-bit number where each group of 4 bits represent a digit of the physical address a.b.c.d where the most significant 4 bits represent ‘a’. The CEC root device (usually the TV) has address 0.0.0.0. Every device that is hooked up to an input of the TV has address a.0.0.0 (where ‘a’ is ≥ 1), devices hooked up to those in turn have addresses a.b.0.0, etc. So a topology of up to 5 devices deep is supported. The physical address a device shall use is stored in the EDID of the sink.  
  * For example, the EDID for each HDMI input of the TV will have a different physical address of the form a.0.0.0 that the sources will read out and use as their physical address.  
  *
@@ -1400,7 +1400,7 @@ type c_char = u8; //its actually i8, but that sucks
 
 /**
  * Payload of [CecOpcode::SetOsdString] and [CecOpcode::SetOsdName]
- * 
+ *
  * Create it from a String (String has to be ascii)
  * ```
  * # use cec_linux::OSDStr;

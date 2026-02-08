@@ -4,7 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/cec_linux.svg)](https://crates.io/crates/cec_linux)
 [![Released API docs](https://docs.rs/cec_linux/badge.svg)](https://docs.rs/cec_linux)
 
-A pure rust library to use the [CEC linux API](https://www.kernel.org/doc/html/v4.9/media/uapi/cec/cec-api.html) (as found on Raspberry Pis with bookworm)
+A pure rust library to use the [CEC linux API](https://www.kernel.org/doc/html/v6.18/userspace-api/media/cec/cec-api.html) (as found on Raspberry Pis with bookworm)
 
 # Background
 

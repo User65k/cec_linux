@@ -90,7 +90,7 @@ ioctl_read! {
 }
 
 /// CEC logical addresses structure used by [CecDevice::set_log](super::CecDevice::set_log) and [CecDevice::get_log](super::CecDevice::get_log)
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct CecLogAddrs {
     /// the claimed logical addresses. Set by the driver.
@@ -177,7 +177,7 @@ impl CecLogAddrs {
     ) -> CecLogAddrs {
         assert!(primary_type.len() <= Self::CEC_MAX_LOG_ADDRS);
         assert_eq!(primary_type.len(), addr_type.len());
-
+        
         let mut log = CecLogAddrs {
             num_log_addrs: primary_type.len() as u8,
             cec_version,
@@ -185,10 +185,8 @@ impl CecLogAddrs {
             osd_name,
             ..Default::default()
         };
-
         log.primary_device_type[..primary_type.len()].copy_from_slice(primary_type);
         log.log_addr_type[..addr_type.len()].copy_from_slice(addr_type);
-
         log
     }
 }
@@ -211,6 +209,7 @@ mod test_cec_log_addrs {
         assert_eq!(a.num_log_addrs, 1);
         assert_eq!(a.vendor_id, VendorID::NONE);
         assert_eq!(a.cec_version, Version::V1_4);
+        assert_eq!(a.flags, CecLogAddrFlags::empty());
         assert_eq!(a.log_addr_type[0], CecLogAddrType::PLAYBACK);
         assert_eq!(a.primary_device_type[0], CecPrimDevType::PLAYBACK);
     }
@@ -223,7 +222,6 @@ mod test_cec_log_addrs {
             &[CecPrimDevType::PLAYBACK],
             &[CecLogAddrType::PLAYBACK],
         );
-        assert_eq!(a.flags, CecLogAddrFlags::empty());
         assert_eq!(a.all_device_types, [0; 4]);
         assert_eq!(a.features, [[0; 4]; 12]);
     }
@@ -240,19 +238,17 @@ bitflags! {
 /// CEC Version Operand for [CecOpcode::CecVersion]
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone, Default)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone)]
 pub enum Version {
     V1_3A = 4,
-    #[default]
     V1_4 = 5,
     V2_0 = 6,
 }
 
 /// Primary Device Type Operand (prim_devtype)
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone, Default)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone)]
 #[repr(u8)]
 pub enum CecPrimDevType {
-    #[default]
     TV = 0,
     RECORD = 1,
     TUNER = 3,
@@ -262,10 +258,9 @@ pub enum CecPrimDevType {
     PROCESSOR = 7,
 }
 /// The logical address types that the CEC device wants to claim
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone, Default)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive, Copy, Clone)]
 #[repr(u8)]
 pub enum CecLogAddrType {
-    #[default]
     TV = 0,
     RECORD = 1,
     TUNER = 2,

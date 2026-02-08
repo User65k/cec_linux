@@ -126,6 +126,11 @@ pub struct CecLogAddrs {
     /// CEC 2.0: The logical address features. Set by the caller. Used in [CecOpcode::ReportFeatures].
     pub features: [[u8; Self::CEC_MAX_LOG_ADDRS]; 12],
 }
+impl Default for CecLogAddrs {
+    fn default() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+}
 impl CecLogAddrs {
     /**
      * The maximum number of logical addresses one device can be assigned to.

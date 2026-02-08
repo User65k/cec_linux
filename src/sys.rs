@@ -69,16 +69,18 @@ bitflags! {
         /// Hardware can monitor all messages, not just directed and broadcast.
         /// Needed for [CecModeFollower::MonitorAll]
         const MONITOR_ALL = (1 << 5);
-        /// Hardware can use CEC only if the HDMI HPD pin is high.
+        /// Hardware can use CEC only if the HDMI Hotplug Detect pin is high. New in v4.13.
         const NEEDS_HPD = (1 << 6);
-        /// Hardware can monitor CEC pin transitions */
+        /// Hardware can monitor CEC pin transitions. New in v4.14.
+        /// When in pin monitoring mode the application will receive CEC_EVENT_PIN_CEC_LOW and CEC_EVENT_PIN_CEC_HIGH events.
         const MONITOR_PIN =	(1 << 7);
-        /// CEC_ADAP_G_CONNECTOR_INFO is available */
+        /// CEC_ADAP_G_CONNECTOR_INFO is available. New in v5.5.
         const CONNECTOR_INFO = (1 << 8);
-        /// CEC_MSG_FL_REPLY_VENDOR_ID is available */
+        /// CEC_MSG_FL_REPLY_VENDOR_ID is available. New in v6.12.
         const REPLY_VENDOR_ID =	(1 << 9);
     }
 }
+//TODO add ioctrl https://www.kernel.org/doc/html/v6.12/userspace-api/media/cec/cec-ioc-adap-g-conn-info.html#cec-adap-g-connector-info
 
 // CEC_ADAP_S_LOG_ADDRS
 ioctl_readwrite! {

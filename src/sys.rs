@@ -128,7 +128,7 @@ pub struct CecLogAddrs {
 }
 impl Default for CecLogAddrs {
     fn default() -> Self {
-        unsafe { MaybeUninit::zeroed().assume_init() }
+        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
     }
 }
 impl CecLogAddrs {

@@ -33,15 +33,14 @@ use std::{
 };
 use sys::{
     capabilities, get_event, get_log, get_mode, get_phys, receive, set_log, set_mode, set_phys,
-    transmit, CecEventType, CecTxError, RxStatus, TxStatus, CEC_MODE_FOLLOWER_MSK,
-    CEC_MODE_INITIATOR_MSK,
+    transmit, CecEventType, CecTxError, RxStatus, CEC_MODE_FOLLOWER_MSK, CEC_MODE_INITIATOR_MSK,
 };
 pub use sys::{
     Capabilities, CecAbortReason, CecCaps, CecEventLostMsgs, CecEventStateChange, CecLogAddrFlags,
     CecLogAddrMask, CecLogAddrType, CecLogAddrs, CecLogicalAddress, CecModeFollower,
     CecModeInitiator, CecMsg, CecOpcode, CecPhysicalAddress, CecPowerStatus, CecPrimDevType,
     CecTimer, CecUserControlCode, DeckControlMode, DeckInfo, DisplayControl, MenuRequestType,
-    OSDStr, PlayMode, RecordingSequence, StatusRequest, VendorID, Version,
+    OSDStr, PlayMode, RecordingSequence, StatusRequest, TxStatus, VendorID, Version,
 };
 
 #[cfg(feature = "tokio")]
@@ -192,6 +191,12 @@ impl CecDevice {
         self.transmit_data(from, to, CecOpcode::UserControlPressed, &[key.into()])?;
         self.transmit(from, to, CecOpcode::UserControlReleased)
     }
+    /// send poll (msg with len=1)
+    pub fn transmit_poll(&self, from: CecLogicalAddress, to: CecLogicalAddress) -> Result<()> {
+        let mut msg = CecMsg::init(from, to);
+        unsafe { transmit(self.0.as_raw_fd(), &mut msg) }?;
+        msg_to_io_result(msg)
+    }
     /// send a cec command without parameters to a remote device
     ///
     /// transmitting from an address not in [CecLogAddrMask] will return InvalidInput
@@ -316,7 +321,8 @@ pub enum CecEvent {
 
 /// Turn a message into io::Result
 fn msg_to_io_result(msg: CecMsg) -> Result<()> {
-    if msg.tx_status.contains(TxStatus::OK) {
+    // for sync it is never empty, for async it empty if queued or non-OK
+    if msg.tx_status.contains(TxStatus::OK) || msg.tx_status.is_empty() {
         Ok(())
     } else {
         Err(std::io::Error::new(

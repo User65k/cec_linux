@@ -28,6 +28,16 @@ pub struct CecCaps {
     version: u32,
 }
 impl CecCaps {
+    /// name of the CEC device driver
+    #[inline]
+    pub fn driver(&self) -> &str {
+        self.driver.as_ref()
+    }
+    /// name of the CEC device
+    #[inline]
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
     /// number of available logical addresses
     #[inline]
     pub fn available_log_addrs(&self) -> u32 {
@@ -37,6 +47,11 @@ impl CecCaps {
     #[inline]
     pub fn capabilities(&self) -> Capabilities {
         self.capabilities
+    }
+    /// version of the CEC adapter framework
+    #[inline]
+    pub fn version(&self) -> u32 {
+        self.version
     }
 }
 impl Default for CecCaps {

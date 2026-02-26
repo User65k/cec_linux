@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/User65k/cec_linux/compare/v0.2.1...v0.2.2) - 2026-02-26
+
+### Other
+
+- device polling support ([#11](https://github.com/User65k/cec_linux/pull/11))
+- CecCaps new accessors: driver, name, version ([#10](https://github.com/User65k/cec_linux/pull/10))
+- generic HDMI vendor id ([#9](https://github.com/User65k/cec_linux/pull/9))
+
 ## [0.2.1](https://github.com/User65k/cec_linux/compare/v0.2.0...v0.2.1) - 2026-02-08
 
 ### Added
